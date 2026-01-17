@@ -9,6 +9,7 @@ import sys
 import math
 from turtle import pen
 
+import pyqtgraph.opengl as gl
 import numpy as np
 import pyqtgraph as pg
 from PyQt5 import QtWidgets
@@ -404,19 +405,74 @@ class TrainingUi(QWidget):
 
 # trajectory plot groupbox
     def create_traj_plot_groupbox(self):
-        traj_plot_groupbox = QGroupBox('Trajectory')
+        traj_plot_groupbox = QGroupBox('Navigation Dashboard')
         traj_plot_groupbox.setFixedHeight(600)
         traj_plot_groupbox.setFixedWidth(600)
         layout = QVBoxLayout()
 
-        self.traj_pw = pg.PlotWidget(title='trajectory')
-        self.traj_pw.showGrid(x=True, y=True)
-        # self.traj_pw.setXRange(max=350, min=-100)
-        # self.traj_pw.setYRange(max=100, min=-300)
-        self.traj_pw.setXRange(max=140, min=-140)
-        self.traj_pw.setYRange(max=140, min=-140)
-        self.traj_plot = self.traj_pw.plot()
-        self.traj_pw.invertY()
+        # 1. 读取配置，判断是否开启 3D
+        self.nav_3d = self.cfg.getboolean('options', 'navigation_3d')
+
+        if self.nav_3d:
+            layout.setSpacing(5)  # 增加图表间距，减少拥挤感
+            layout.setContentsMargins(10, 20, 10, 10)
+
+            # =========================================================
+            #  1. XY Plane Plot (Top-Down View)
+            # =========================================================
+            self.traj_pw_xy = pg.PlotWidget(title='<span style="color: #333; font-size: 10pt; font-weight: bold;">Horizontal Track (XY)</span>')
+            self.traj_pw_xy.setBackground('w')  # 纯白背景
+            self.traj_pw_xy.showGrid(x=True, y=True, alpha=0.2) # 极淡的网格
+            self.traj_pw_xy.setLabel('left', 'Y Position', units='m', color='#666')
+            self.traj_pw_xy.setLabel('bottom', 'X Position', units='m', color='#666')
+            
+            # [Modern Key Feature] 锁定长宽比，确保地图不拉伸变形
+            self.traj_pw_xy.setAspectLocked(False) 
+            
+            # 保持之前的 Y 轴反转逻辑 (如果 AirSim 坐标系需要)
+            self.traj_pw_xy.invertY() 
+
+            # --- 绘图元素 ---
+            # 1. 轨迹线 (深海蓝，稍微加粗)
+            self.plot_xy_trace = self.traj_pw_xy.plot(pen=pg.mkPen(color='#0050C6', width=2.5))
+            # 2. 起点 (绿色实心圆)
+            self.plot_xy_start = self.traj_pw_xy.plot(symbol='o', symbolBrush='#28a745', symbolPen='w', symbolSize=12)
+            # 3. 终点 (红色旗帜/星标)
+            self.plot_xy_goal = self.traj_pw_xy.plot(symbol='star', symbolBrush='#dc3545', symbolPen='w', symbolSize=18)
+
+            # =========================================================
+            #  2. Z Axis Plot (Altitude Profile)
+            # =========================================================
+            self.traj_pw_z = pg.PlotWidget(title='<span style="color: #333; font-size: 10pt; font-weight: bold;">Altitude Profile (Z)</span>')
+            self.traj_pw_z.setBackground('w')
+            self.traj_pw_z.showGrid(x=True, y=True, alpha=0.2)
+            self.traj_pw_z.setLabel('left', 'Altitude', units='m', color='#666')
+            self.traj_pw_z.setLabel('bottom', 'Time Steps', color='#666')
+            
+            # --- 绘图元素 ---
+            # 1. 目标高度参考线 (灰色虚线)
+            self.plot_z_target_line = self.traj_pw_z.plot(pen=pg.mkPen(color='#999', width=1, style=pg.QtCore.Qt.DashLine))
+            # 2. 实际高度曲线 (橙色/珊瑚色，对比蓝色)
+            self.plot_z_trace = self.traj_pw_z.plot(pen=pg.mkPen(color='#fd7e14', width=2), fillLevel=0, brush=(253, 126, 20, 30))
+
+            self.traj_pw_xy.setXRange(max=100, min=-50)
+            self.traj_pw_xy.setYRange(max=50, min=-100)
+
+            layout.addWidget(self.traj_pw_xy, stretch=2)
+            layout.addWidget(self.traj_pw_z, stretch=1)
+
+        else:
+            # --- 2D 模式 ---
+            self.traj_pw = pg.PlotWidget(title='trajectory')
+            self.traj_pw.showGrid(x=True, y=True)
+            # self.traj_pw.setXRange(max=350, min=-100)
+            # self.traj_pw.setYRange(max=100, min=-300)
+            self.traj_pw.setXRange(max=140, min=-140)
+            self.traj_pw.setYRange(max=140, min=-140)
+            self.traj_plot = self.traj_pw.plot()
+            self.traj_pw.invertY()
+
+            layout.addWidget(self.traj_pw)
 
         if self.cfg.get('options', 'env_name') == 'SimpleAvoid':
             background_image_path = 'resources/env_maps/simple_world_light.png'
@@ -476,7 +532,6 @@ class TrainingUi(QWidget):
         elif self.cfg.get('options', 'env_name') == 'City':
             self.traj_pw.setXRange(max=300, min=0)
             self.traj_pw.setYRange(max=0, min=-300)
-        layout.addWidget(self.traj_pw)
 
         traj_plot_groupbox.setLayout(layout)
         return traj_plot_groupbox
@@ -485,20 +540,64 @@ class TrainingUi(QWidget):
         """
         Plot trajectory
         """
-        # clear plot
-        self.traj_pw.clear()
+        if self.nav_3d:
+            # === 3D 极简风格更新 ===
+            
+            # 1. 数据预处理
+            traj_arr = np.array(trajectory_list)
+            
+            # 确保有数据才绘制
+            if len(traj_arr) > 0:
+                
+                # --- 更新 XY 平面 (Top View) ---
+                # 取前两列: x, y
+                x_data = traj_arr[:, 0]
+                y_data = traj_arr[:, 1]
+                
+                self.plot_xy_trace.setData(x_data, y_data)
+                
+                # 仅绘制单个点作为 Start/Goal
+                self.plot_xy_start.setData([start[0]], [start[1]])
+                self.plot_xy_goal.setData([goal[0]], [goal[1]])
+                
+                # --- 更新 Z 轴剖面 (Side View) ---
+                # 检查是否包含 Z 轴数据 (通常在 index 2)
+                if traj_arr.shape[1] >= 3:
+                    z_data = traj_arr[:, 2]
+                    steps = np.arange(len(z_data)) # X轴是步数 (Time Step)
+                    
+                    # 绘制高度曲线
+                    self.plot_z_trace.setData(steps, z_data)
+                    
+                    # 绘制目标高度虚线 (如果有 Z 目标)
+                    if len(goal) >= 3:
+                        goal_z = goal[2]
+                        # 创建一条横穿当前 step 范围的直线
+                        self.plot_z_target_line.setData([0, len(z_data)], [goal_z, goal_z])
+                else:
+                    self.plot_z_trace.clear()
+            
+            # 如果轨迹被清空 (reset)
+            elif len(traj_arr) == 0:
+                self.plot_xy_trace.clear()
+                self.plot_z_trace.clear()
 
-        # set background image
-        background_list = ['SimpleAvoid', 'NH_center',
-                           'City_400', 'Tree_200', 'Forest']
-        if self.cfg.get('options', 'env_name') in background_list:
-            self.traj_pw.addItem(self.background_img)
+        else:
+            # === 2D 绘图更新 ===
+            # clear plot
+            self.traj_pw.clear()
 
-        # plot start, goal and trajectory
-        self.traj_pw.plot([start[0]], [start[1]], symbol='o')
-        self.traj_pw.plot([goal[0]], [goal[1]], symbol='o')
-        self.traj_pw.plot(
-            trajectory_list[..., 0], trajectory_list[..., 1], pen=self.pen_red)
+            # set background image
+            background_list = ['SimpleAvoid', 'NH_center',
+                            'City_400', 'Tree_200', 'Forest']
+            if self.cfg.get('options', 'env_name') in background_list:
+                self.traj_pw.addItem(self.background_img)
+
+            # plot start, goal and trajectory
+            self.traj_pw.plot([start[0]], [start[1]], symbol='o')
+            self.traj_pw.plot([goal[0]], [goal[1]], symbol='o')
+            self.traj_pw.plot(
+                trajectory_list[..., 0], trajectory_list[..., 1], pen=self.pen_red)
 
 
 def main():
