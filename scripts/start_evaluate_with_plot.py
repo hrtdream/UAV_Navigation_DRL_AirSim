@@ -21,7 +21,8 @@ def get_parser():
 def main():
 
     # set evaluation model path
-    eval_path = r'C:\Users\helei\Documents\GitHub\UAV_Navigation_DRL_AirSim\logs\SimpleAvoid\2022_09_06_15_05_SimpleMultirotor_No_CNN_SAC'
+    # eval_path = r'C:\Users\helei\Documents\GitHub\UAV_Navigation_DRL_AirSim\logs\SimpleAvoid\2022_09_06_15_05_SimpleMultirotor_No_CNN_SAC'
+    eval_path = r'D:\Code\UAV_Navigation_DRL_AirSim\logs\Mountains\2025_12_31_10_29_Multirotor_CNN_Spatial_SAC'
 
     # select config file and model name
     config_file = eval_path + '/config/config.ini'
@@ -29,7 +30,7 @@ def main():
     model_file = eval_path + '/models/model_sb3.zip'
     # config_file = r"C:\Users\helei\Documents\GitHub\UAV_Navigation_DRL_AirSim\configs\config_new.ini"
     # model_file = eval_path + '/models/model_200000.zip'
-    total_eval_episodes = 50
+    total_eval_episodes = 10
 
     # 1. Create the qt thread (is MainThread in fact)
     app = QtWidgets.QApplication(sys.argv)
