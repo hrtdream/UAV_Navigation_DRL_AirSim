@@ -41,6 +41,9 @@ def main():
     training_thread.env.reward_signal.connect(gui.reward_plot_cb)
     training_thread.env.pose_signal.connect(gui.traj_plot_cb)
 
+    # Automatically close the GUI when the training thread finishes
+    training_thread.finished.connect(app.quit)
+
     cfg = ConfigParser()
     cfg.read(config_file)
 
