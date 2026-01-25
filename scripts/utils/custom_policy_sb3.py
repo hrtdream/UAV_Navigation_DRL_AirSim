@@ -79,6 +79,67 @@ class No_CNN(BaseFeaturesExtractor):
         self.feature_all = x  # use  to update feature before FC
 
         return x
+ 
+
+class No_CNN_Dual(BaseFeaturesExtractor):
+    """
+    Dual-stream policy: Extracts both 'Max' (nearest obstacle) and 
+    'Avg' (obstacle density) features from the depth image.
+    
+    Designed to provide richer gradients than standard No_CNN for faster convergence.
+    Input:  [Batch, 1, 80, 100] (Depth Image)
+    Output: [Batch, 50 + state_dim] (Flattened 25 Max + 25 Avg features + state)
+    """
+
+    def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 256, state_feature_dim=4):
+        # features_dim is a placeholder; we calculate the real dim dynamically
+        super(No_CNN_Dual, self).__init__(observation_space, features_dim)
+
+        assert state_feature_dim > 0
+        self.feature_num_state = state_feature_dim
+        self.feature_all = None
+
+        # 1. Danger Stream: MaxPool (Captures nearest obstacle in the grid)
+        # Input: 80x100 -> Output: 5x5
+        self.max_pool = nn.MaxPool2d(kernel_size=(16, 20))
+
+        # 2. Density Stream: AvgPool (Captures average clutter in the grid)
+        # Input: 80x100 -> Output: 5x5
+        self.avg_pool = nn.AvgPool2d(kernel_size=(16, 20))
+
+        # 3. Flatten layer for both streams
+        self.flatten = nn.Flatten()
+
+        # Compute shape by doing one forward pass to ensure compatibility
+        # We manually normalize by 255.0 here to mimic SB3's preprocessing during init
+        with th.no_grad():
+            sample_input = th.as_tensor(observation_space.sample()[None][:, 0:1, :, :]).float()
+            dim_max = self.flatten(self.max_pool(sample_input)).shape[1]
+            dim_avg = self.flatten(self.avg_pool(sample_input)).shape[1]
+            
+        # Update the features_dim to match actual output + state features
+        self._features_dim = dim_max + dim_avg + state_feature_dim
+
+    def forward(self, observations: th.Tensor) -> th.Tensor:
+        # Note: observations are already normalized to [0, 1] by SB3
+        depth_img = observations[:, 0:1, :, :]
+        
+        # Stream 1: Max Features (25 features) - High value means close obstacle
+        feat_max = self.flatten(self.max_pool(depth_img))
+        
+        # Stream 2: Avg Features (25 features) - High value means high density
+        feat_avg = self.flatten(self.avg_pool(depth_img))
+        
+        # Concatenate CNN features [Batch, 50]
+        cnn_feature = th.cat((feat_max, feat_avg), dim=1)
+
+        state_feature = observations[:, 1, 0, 0:self.feature_num_state]
+
+        # Final Concatenate
+        out = th.cat((cnn_feature, state_feature), dim=1)
+        self.feature_all = out
+
+        return out
 
 
 class CNN_GAP(BaseFeaturesExtractor):
@@ -465,3 +526,69 @@ class CNN_GAP_new(BaseFeaturesExtractor):
         self.feature_all = x  # use  to update feature before FC
 
         return x
+
+
+class CNN_Spatial(BaseFeaturesExtractor):
+    """
+    Hybrid policy: Combines the learnable filters of a CNN with the 
+    spatial preservation of No_CNN.
+    
+    Designed specifically for 80x100 input to output a 5x5 feature grid.
+    Input:  [Batch, 1, 80, 100] (Depth Image)
+    Output: [Batch, 200 + state_dim] (Flattened 8x5x5 features + state)
+    """
+
+    def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 256, state_feature_dim=4):
+        # features_dim is a placeholder; we calculate the real dim dynamically
+        super(CNN_Spatial, self).__init__(observation_space, features_dim)
+
+        assert state_feature_dim > 0
+        self.feature_num_state = state_feature_dim
+        self.feature_all = None
+
+        # 1. Learnable Layer: Extract features but keep size roughly same
+        # Input: 80x100
+        # Output: 8 x 80 x 100 (Channels x H x W)
+        self.conv = nn.Sequential(
+            nn.Conv2d(1, 8, kernel_size=3, stride=1, padding='same'),
+            nn.ReLU()
+        )
+
+        # 2. Spatial Downsampling: Mimic No_CNN's grid
+        # We want final grid to be roughly 5x5 to preserve spatial info.
+        # 80 / 16 = 5
+        # 100 / 20 = 5
+        self.pool = nn.MaxPool2d(kernel_size=(16, 20))
+        
+        # 3. Flatten without Linear projection (Direct Spatial Mapping)
+        self.flatten = nn.Flatten()
+
+        # Compute shape by doing one forward pass to ensure compatibility
+        # We manually normalize by 255.0 here to mimic SB3's preprocessing during init
+        with th.no_grad():
+            sample_input = th.as_tensor(observation_space.sample()[None][:, 0:1, :, :]).float()
+            n_flatten = self.flatten(self.pool(self.conv(sample_input))).shape[1]
+        
+        # Update the features_dim to match actual output + state features
+        self._features_dim = n_flatten + state_feature_dim
+
+    def forward(self, observations: th.Tensor) -> th.Tensor:
+        # Note: observations are already normalized to [0, 1] by SB3
+        depth_img = observations[:, 0:1, :, :]
+
+        # 1. Extract features (Filtering)
+        x = self.conv(depth_img)
+        
+        # 2. Downsample to coarse grid (8 channels * 5 * 5)
+        x = self.pool(x)
+        
+        # 3. Flatten (Spatial features are preserved in sequence)
+        cnn_feature = self.flatten(x)  # Shape: [Batch, 200]
+
+        state_feature = observations[:, 1, 0, 0:self.feature_num_state]
+        
+        # Concatenate
+        out = th.cat((cnn_feature, state_feature), dim=1)
+        self.feature_all = out
+
+        return out

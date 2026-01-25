@@ -1,4 +1,4 @@
-from .custom_policy_sb3 import CNN_FC, CNN_GAP, CNN_GAP_BN, No_CNN, CNN_MobileNet, CNN_GAP_new
+from .custom_policy_sb3 import CNN_FC, CNN_GAP, CNN_GAP_BN, No_CNN, CNN_MobileNet, CNN_GAP_new, CNN_Spatial, No_CNN_Dual
 import datetime
 import gym
 import gym_env
@@ -119,13 +119,19 @@ class TrainingThread(QtCore.QThread):
             if policy_name == 'CNN_FC':
                 policy_used = CNN_FC
             elif policy_name == 'CNN_GAP':
+                policy_used = CNN_GAP
+            elif policy_name == 'CNN_GAP_new':
                 policy_used = CNN_GAP_new
             elif policy_name == 'CNN_GAP_BN':
                 policy_used = CNN_GAP_BN
+            elif policy_name == 'CNN_Spatial':
+                policy_used = CNN_Spatial
             elif policy_name == 'CNN_MobileNet':
                 policy_used = CNN_MobileNet
             elif policy_name == 'No_CNN':
                 policy_used = No_CNN
+            elif policy_name == 'No_CNN_Dual':
+                policy_used = No_CNN_Dual
             else:
                 raise Exception('policy select error: ', policy_name)
 
@@ -154,15 +160,15 @@ class TrainingThread(QtCore.QThread):
                 seed=0,
                 verbose=2)
         elif algo == 'SAC':
-            n_actions = self.env.action_space.shape[-1]
-            noise_sigma = self.cfg.getfloat(
-                'DRL', 'action_noise_sigma') * np.ones(n_actions)
-            action_noise = NormalActionNoise(mean=np.zeros(n_actions),
-                                             sigma=noise_sigma)
+            # n_actions = self.env.action_space.shape[-1]
+            # noise_sigma = self.cfg.getfloat(
+            #     'DRL', 'action_noise_sigma') * np.ones(n_actions)
+            # action_noise = NormalActionNoise(mean=np.zeros(n_actions),
+            #                                  sigma=noise_sigma)
             model = SAC(
                 policy_base,
                 self.env,
-                action_noise=action_noise,
+                # action_noise=action_noise,
                 policy_kwargs=policy_kwargs,
                 buffer_size=self.cfg.getint('DRL', 'buffer_size'),
                 gamma=self.cfg.getfloat('DRL', 'gamma'),
