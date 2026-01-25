@@ -487,64 +487,64 @@ class TrainingUi(QWidget):
 
             layout.addWidget(self.traj_pw)
 
-        if self.cfg.get('options', 'env_name') == 'SimpleAvoid':
-            background_image_path = 'resources/env_maps/simple_world_light.png'
-            img_data = Image.open(background_image_path)
-            image = np.copy(img_data)
-            self.background_img = pg.ImageItem(image)
-            self.traj_pw.addItem(self.background_img)
-            # make sure image is behind other data
-            self.background_img.setZValue(-100)
-            self.background_img.setRect(pg.QtCore.QRectF(-60, -60, 120, 120))
-            self.traj_pw.setXRange(max=60, min=-60)
-            self.traj_pw.setYRange(max=60, min=-60)
-        elif self.cfg.get('options', 'env_name') == 'NH_center':
-            background_image_path = 'resources/env_maps/NH_center.png'
-            img_data = Image.open(background_image_path)
-            image = np.copy(img_data)
-            self.background_img = pg.ImageItem(image)
-            self.traj_pw.addItem(self.background_img)
-            # make sure image is behind other data
-            self.background_img.setZValue(-100)
-            self.background_img.setRect(pg.QtCore.QRectF(-135, -135, 270, 270))
-            self.traj_pw.setXRange(max=135, min=-135)
-            self.traj_pw.setYRange(max=135, min=-135)
-        elif self.cfg.get('options', 'env_name') == 'City_400':
-            background_image_path = 'resources/env_maps/city_400.png'
-            img_data = Image.open(background_image_path)
-            image = np.copy(img_data)
-            self.background_img = pg.ImageItem(image)
-            self.traj_pw.addItem(self.background_img)
-            # make sure image is behind other data
-            self.background_img.setZValue(-100)
-            self.background_img.setRect(pg.QtCore.QRectF(-220, -220, 440, 440))
-            self.traj_pw.setXRange(max=220, min=-220)
-            self.traj_pw.setYRange(max=220, min=-220)
-        elif self.cfg.get('options', 'env_name') == 'Tree_200':
-            background_image_path = 'resources/env_maps/trees_200_200.png'
-            img_data = Image.open(background_image_path)
-            image = np.copy(img_data)
-            self.background_img = pg.ImageItem(image)
-            self.traj_pw.addItem(self.background_img)
-            # make sure image is behind other data
-            self.background_img.setZValue(-100)
-            self.background_img.setRect(pg.QtCore.QRectF(-100, -100, 200, 200))
-            self.traj_pw.setXRange(max=100, min=-100)
-            self.traj_pw.setYRange(max=100, min=-100)
-        elif self.cfg.get('options', 'env_name') == 'Forest':
-            background_image_path = 'resources/env_maps/Forest.png'
-            img_data = Image.open(background_image_path)
-            image = np.copy(img_data)
-            self.background_img = pg.ImageItem(image)
-            self.traj_pw.addItem(self.background_img)
-            # make sure image is behind other data
-            self.background_img.setZValue(-100)
-            self.background_img.setRect(pg.QtCore.QRectF(-100, -100, 200, 200))
-            self.traj_pw.setXRange(max=100, min=-100)
-            self.traj_pw.setYRange(max=100, min=-100)
-        elif self.cfg.get('options', 'env_name') == 'City':
-            self.traj_pw.setXRange(max=300, min=0)
-            self.traj_pw.setYRange(max=0, min=-300)
+            if self.cfg.get('options', 'env_name') == 'SimpleAvoid':
+                background_image_path = 'resources/env_maps/simple_world_light.png'
+                img_data = Image.open(background_image_path)
+                image = np.copy(img_data)
+                self.background_img = pg.ImageItem(image)
+                self.traj_pw.addItem(self.background_img)
+                # make sure image is behind other data
+                self.background_img.setZValue(-100)
+                self.background_img.setRect(pg.QtCore.QRectF(-60, -60, 120, 120))
+                self.traj_pw.setXRange(max=60, min=-60)
+                self.traj_pw.setYRange(max=60, min=-60)
+            elif self.cfg.get('options', 'env_name') == 'NH_center':
+                background_image_path = 'resources/env_maps/NH_center.png'
+                img_data = Image.open(background_image_path)
+                image = np.copy(img_data)
+                self.background_img = pg.ImageItem(image)
+                self.traj_pw.addItem(self.background_img)
+                # make sure image is behind other data
+                self.background_img.setZValue(-100)
+                self.background_img.setRect(pg.QtCore.QRectF(-135, -135, 270, 270))
+                self.traj_pw.setXRange(max=135, min=-135)
+                self.traj_pw.setYRange(max=135, min=-135)
+            elif self.cfg.get('options', 'env_name') == 'City_400':
+                background_image_path = 'resources/env_maps/city_400.png'
+                img_data = Image.open(background_image_path)
+                image = np.copy(img_data)
+                self.background_img = pg.ImageItem(image)
+                self.traj_pw.addItem(self.background_img)
+                # make sure image is behind other data
+                self.background_img.setZValue(-100)
+                self.background_img.setRect(pg.QtCore.QRectF(-220, -220, 440, 440))
+                self.traj_pw.setXRange(max=220, min=-220)
+                self.traj_pw.setYRange(max=220, min=-220)
+            elif self.cfg.get('options', 'env_name') == 'Tree_200':
+                background_image_path = 'resources/env_maps/trees_200_200.png'
+                img_data = Image.open(background_image_path)
+                image = np.copy(img_data)
+                self.background_img = pg.ImageItem(image)
+                self.traj_pw.addItem(self.background_img)
+                # make sure image is behind other data
+                self.background_img.setZValue(-100)
+                self.background_img.setRect(pg.QtCore.QRectF(-100, -100, 200, 200))
+                self.traj_pw.setXRange(max=100, min=-100)
+                self.traj_pw.setYRange(max=100, min=-100)
+            elif self.cfg.get('options', 'env_name') == 'Forest':
+                background_image_path = 'resources/env_maps/Forest.png'
+                img_data = Image.open(background_image_path)
+                image = np.copy(img_data)
+                self.background_img = pg.ImageItem(image)
+                self.traj_pw.addItem(self.background_img)
+                # make sure image is behind other data
+                self.background_img.setZValue(-100)
+                self.background_img.setRect(pg.QtCore.QRectF(-100, -100, 200, 200))
+                self.traj_pw.setXRange(max=100, min=-100)
+                self.traj_pw.setYRange(max=100, min=-100)
+            elif self.cfg.get('options', 'env_name') == 'City':
+                self.traj_pw.setXRange(max=300, min=0)
+                self.traj_pw.setYRange(max=0, min=-300)
 
         traj_plot_groupbox.setLayout(layout)
         return traj_plot_groupbox
