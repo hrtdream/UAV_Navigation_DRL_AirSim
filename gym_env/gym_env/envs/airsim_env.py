@@ -36,6 +36,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         self.model = None
         self.data_path = None
         self.lgmd = None
+        self.goal_points = []
 
     def set_config(self, cfg):
         """get config from .ini file
@@ -153,6 +154,32 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 start_position[1] - goal_distance - 10, start_position[1] + goal_distance + 10]
             self.work_space_z = [0.5, 50]
             self.max_episode_steps = 500
+        elif self.env_name == 'Mountains':
+            start_position = [0, 0, 10]
+            self.goal_points = [
+                [-0.55265, -31.9786, 19.0225],
+                [48.59735, -33.3286, 30.07256],
+                # [193.5974, -55.0786, 46.32256],
+                # [369.2474, 35.32137, 62.5725],
+                # [541.3474, 143.6714, 32.07256]
+            ]
+            self.dynamic_model.set_start(start_position, random_angle=math.pi*2)
+            self.dynamic_model.set_goals(self.goal_points)
+            self.work_space_x = None
+            self.work_space_y = None
+            self.work_space_z = None
+            self.max_episode_steps = None
+        elif self.env_name == 'Mountains_Easy':
+            start_position = [0, 0, 10]
+            self.goal_points = [
+                [-0.55265, -31.9786, 19.0225]
+            ]
+            self.dynamic_model.set_start(start_position, random_angle=math.pi*2)
+            self.dynamic_model.set_goals(self.goal_points)
+            self.work_space_x = [-40, 40]
+            self.work_space_y = [-60, 40]
+            self.work_space_z = [3, 30]
+            self.max_episode_steps = 400
         else:
             raise Exception("Invalid env_name!", self.env_name)
 
@@ -164,6 +191,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         self.episode_num = 0
         self.total_step = 0
         self.step_num = 0
+        self.episode_steps = 0
         self.cumulated_episode_reward = 0
         self.previous_distance_from_des_point = 0
 
@@ -204,8 +232,17 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
         self.episode_num += 1
         self.step_num = 0
+        self.episode_steps = 0
         self.cumulated_episode_reward = 0
-        self.dynamic_model.goal_distance = self.dynamic_model.get_distance_to_goal_2d()
+        self.total_distance = 0.0  # Initialize total distance
+        self.previous_position_metric = self.dynamic_model.get_position() # Initialize previous position
+
+        self.update_dynamic_parameters()
+
+        if self.dynamic_model.navigation_3d:
+            self.dynamic_model.goal_distance = self.dynamic_model.get_distance_to_goal_3d()
+        else:
+            self.dynamic_model.goal_distance = self.dynamic_model.get_distance_to_goal_2d()
         self.previous_distance_from_des_point = self.dynamic_model.goal_distance
 
         self.trajectory_list = []
@@ -222,8 +259,31 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         else:
             self.dynamic_model.set_action(action)
 
+        self.goal_reached_flag = False
+        
+        if self.env_name in {'Mountains', 'Mountains_Easy'}:
+            prev_index = self.dynamic_model.current_goal_index
+            self.dynamic_model.check_and_switch_goal(self.accept_radius)
+            
+            # 如果索引变大了，说明刚刚到达了一个中间点
+            if self.dynamic_model.current_goal_index > prev_index:
+                self.goal_reached_flag = True
+                print(f"Goal {prev_index} reached!")
+
+                self.update_dynamic_parameters()
+                self.step_num = 0
+            
+                if not self.is_done(): # 如果不是最后一个点导致结束
+                    self.previous_distance_from_des_point = self.dynamic_model.get_distance_to_goal_3d()
+
         position_ue4 = self.dynamic_model.get_position()
         self.trajectory_list.append(position_ue4)
+
+        # Calculate distance traveled
+        distance_increment = np.linalg.norm(
+            np.array(position_ue4) - np.array(self.previous_position_metric))
+        self.total_distance += distance_increment
+        self.previous_position_metric = position_ue4
 
         # get new obs
         obs = self.get_obs()
@@ -232,10 +292,20 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             'is_success': self.is_in_desired_pose(),
             'is_crash': self.is_crashed(),
             'is_not_in_workspace': self.is_not_inside_workspace(),
-            'step_num': self.step_num
+            'is_timeout': self.step_num >= self.max_episode_steps,
+            'episode_steps': self.episode_steps,
+            'episode_reward': self.cumulated_episode_reward,
+            'episode_distance': self.total_distance
         }
         if done:
-            print(info)
+            print(
+                f"is_success: {info['is_success']}, ",
+                # f"is_crash: {info['is_crash']}, ",
+                # f"is_not_in_workspace: {info['is_not_in_workspace']}, ",
+                # f"is_timeout: {info['is_timeout']}, ",
+                f"episode_steps: {info['episode_steps']}, "
+                f"episode_reward: {info['episode_reward']:.2f}"
+            )
 
         # ----------------compute reward---------------------------
         if self.dynamic_name == 'SimpleFixedwing':
@@ -249,6 +319,8 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
             reward = self.compute_reward_lqr(done, action)
         elif self.reward_type == 'reward_final':
             reward = self.compute_reward_final(done, action)
+        elif self.reward_type == 'reward_single_goal':
+            reward = self.compute_reward_single_goal(done, action)
         else:
             reward = self.compute_reward(done, action)
 
@@ -299,6 +371,7 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
         self.step_num += 1
         self.total_step += 1
+        self.episode_steps += 1
 
         return obs, reward, done, info
 
@@ -380,6 +453,10 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         # check observation
         while responses[0].width == 0:
             print("get_image_fail...")
+            # For Mountains env, using the following
+            # responses = self.client.simGetImages([
+            #     airsim.ImageRequest("0", airsim.ImageType.DepthPerspective, True)
+            # ])
             responses = self.client.simGetImages(
                 airsim.ImageRequest("0", airsim.ImageType.DepthVis, True))
 
@@ -519,6 +596,83 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         return reward
 
     def compute_reward_final(self, done, action):
+        reward = 0
+        reward_reach = 15
+        reward_crash = -20
+        reward_outside = -10
+        
+        if self.env_name == 'NH_center':
+            distance_reward_coef = 500
+        elif self.env_name == 'Mountains' or self.env_name == 'Mountains_Easy':
+            distance_reward_coef = 75
+        else:
+            distance_reward_coef = 50
+
+        if not done:
+            # 1 - goal reward
+            distance_now = self.get_distance_to_goal_3d()
+            reward_distance = distance_reward_coef * (self.previous_distance_from_des_point - distance_now) / \
+                self.dynamic_model.goal_distance   # normalized to 100 according to goal_distance
+            self.previous_distance_from_des_point = distance_now
+
+            # 2 - Position punishment
+            current_pose = self.dynamic_model.get_position()
+            goal_pose = self.dynamic_model.goal_position
+            x = current_pose[0]
+            y = current_pose[1]
+            z = current_pose[2]
+            x_g = goal_pose[0]
+            y_g = goal_pose[1]
+            z_g = goal_pose[2]
+
+            prev_goal = self.dynamic_model.start_position 
+            if self.dynamic_model.current_goal_index > 0:
+                prev_goal = self.dynamic_model.goal_points[self.dynamic_model.current_goal_index - 1]
+            punishment_xy = np.clip(self.getDis(
+                x, y, prev_goal[0], prev_goal[1], x_g, y_g) / 10, 0, 1)
+            punishment_z = 0.5 * np.clip((z - z_g)/5, 0, 1)
+
+            punishment_pose = punishment_xy + punishment_z
+
+            if self.min_distance_to_obstacles < 10:
+                punishment_obs = 1 - np.clip((self.min_distance_to_obstacles - self.crash_distance) / 5, 0, 1)
+            else:
+                punishment_obs = 0
+
+            punishment_action = 0
+
+            # add yaw_rate cost
+            yaw_speed_cost = abs(action[-1]) / self.dynamic_model.yaw_rate_max_rad
+
+            if self.dynamic_model.navigation_3d:
+                # add action and z error cost
+                v_z_cost = ((abs(action[1]) / self.dynamic_model.v_z_max)**2)
+                z_err_cost = (
+                    (abs(self.dynamic_model.state_raw[1]) / self.dynamic_model.max_vertical_difference)**2)
+                punishment_action += (v_z_cost + z_err_cost)
+
+            punishment_action += yaw_speed_cost
+
+            yaw_error = self.dynamic_model.state_raw[2]
+            yaw_error_cost = abs(yaw_error / 90)
+
+            reward = reward_distance - 0.3 * punishment_pose - 0.2 * \
+                punishment_obs - 0.1 * punishment_action - 0.5 * yaw_error_cost
+            
+            if hasattr(self, 'goal_reached_flag') and self.goal_reached_flag:
+                reward += reward_reach
+
+        else:
+            if self.is_in_desired_pose():
+                reward = reward_reach
+            if self.is_crashed():
+                reward = reward_crash
+            if self.is_not_inside_workspace():
+                reward = reward_outside
+
+        return reward
+    
+    def compute_reward_single_goal(self, done, action):
         reward = 0
         reward_reach = 10
         reward_crash = -20
@@ -861,12 +1015,19 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
         episode_done = False
 
         is_not_inside_workspace_now = self.is_not_inside_workspace()
-        has_reached_des_pose = self.is_in_desired_pose()
         too_close_to_obstable = self.is_crashed()
+
+        has_reached_des_pos = False
+        if self.env_name in {'Mountains', 'Mountains_Easy'}:
+             # 如果索引已经超过了列表长度，说明所有目标都跑完了
+            if self.dynamic_model.current_goal_index >= len(self.dynamic_model.goal_points):
+                has_reached_des_pos = True
+        else:
+           has_reached_des_pos = self.is_in_desired_pose()
 
         # We see if we are outside the Learning Space
         episode_done = is_not_inside_workspace_now or\
-            has_reached_des_pose or\
+            has_reached_des_pos or\
             too_close_to_obstable or\
             self.step_num >= self.max_episode_steps
 
@@ -903,13 +1064,14 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
 
 # ! ----------- useful functions-------------------------------------------
     def get_distance_to_goal_3d(self):
-        current_pose = self.dynamic_model.get_position()
-        goal_pose = self.dynamic_model.goal_position
-        relative_pose_x = current_pose[0] - goal_pose[0]
-        relative_pose_y = current_pose[1] - goal_pose[1]
-        relative_pose_z = current_pose[2] - goal_pose[2]
-
-        return math.sqrt(pow(relative_pose_x, 2) + pow(relative_pose_y, 2) + pow(relative_pose_z, 2))
+        # 直接调用 dynamic_model 里的方法，避免代码重复
+        if hasattr(self.dynamic_model, 'get_distance_to_goal_3d'):
+             return self.dynamic_model.get_distance_to_goal_3d()
+        else:
+             #以此作为备用逻辑（防止其他的 dynamic model 没有实现这个方法）
+             current_pose = self.dynamic_model.get_position()
+             goal_pose = self.dynamic_model.goal_position
+             return math.dist(current_pose, goal_pose)
 
     def getDis(self, pointX, pointY, lineX1, lineY1, lineX2, lineY2):
         '''
@@ -1056,3 +1218,37 @@ class AirsimGymEnv(gym.Env, QtCore.QThread):
                 self.q_value_map[6, :, :] = np.nan
                 self.q_value_map[7, :, :] = np.nan
                 self.q_value_map[8, :, :] = np.nan
+    
+    def update_dynamic_parameters(self):
+        if self.env_name != 'Mountains':
+            return
+
+        current_idx = self.dynamic_model.current_goal_index
+        if current_idx >= len(self.dynamic_model.goal_points):
+            return 
+        
+        # 获取当前目标和上一位置
+        current_goal = self.dynamic_model.goal_points[current_idx]
+        if current_idx == 0:
+            prev_point = self.dynamic_model.start_position
+        else:
+            prev_point = self.dynamic_model.goal_points[current_idx - 1]
+
+        # 1. XY 轴范围 (保持之前的逻辑)
+        margin_xy = 30.0  
+        x_min = min(prev_point[0], current_goal[0]) - margin_xy
+        x_max = max(prev_point[0], current_goal[0]) + margin_xy
+        y_min = min(prev_point[1], current_goal[1]) - margin_xy
+        y_max = max(prev_point[1], current_goal[1]) + margin_xy
+        self.work_space_x = [x_min, x_max]
+        self.work_space_y = [y_min, y_max]
+        
+        # 2. Z 轴范围 (针对你的提议进行的修正)
+        z_min = 5.0  # 你的提议：最低 5米 (很棒的设置)
+        margin_z = 10.0  # 额外的安全边距
+        z_max = max(prev_point[2], current_goal[2]) + margin_z  
+
+        self.work_space_z = [z_min, z_max]
+
+        dist = math.dist(prev_point, current_goal)
+        self.max_episode_steps = (dist / self.dynamic_model.dt // 100 + 1) * 100

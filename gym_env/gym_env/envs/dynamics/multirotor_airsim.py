@@ -28,8 +28,10 @@ class MultirotorDynamicsAirsim():
         self.start_random_angle = None
         self.goal_position = [0, 0, 0]
         self.goal_distance = None
-        self.goal_random_angle = None
+        self.goal_random_angle = 0
         self.goal_rect = None
+        self.goal_points = []
+        self.current_goal_index = 0
 
         # states
         self.x = 0
@@ -74,7 +76,12 @@ class MultirotorDynamicsAirsim():
     def reset(self):
         self.client.reset()
         # reset goal
-        self.update_goal_pose()
+        if hasattr(self, 'goal_points') and len(self.goal_points) > 0:
+            self.current_goal_index = 0
+            self.update_current_goal()
+        else:
+            # 否则使用旧的单目标随机生成逻辑
+            self.update_goal_pose()
 
         # reset start
         yaw_noise = self.start_random_angle * np.random.random()
@@ -156,6 +163,22 @@ class MultirotorDynamicsAirsim():
         self.goal_random_angle = random_angle
         if rect is not None:
             self.goal_rect = rect
+
+    def set_goals(self, goal_points):
+        self.goal_points = goal_points
+        self.current_goal_index = 0
+        self.update_current_goal()
+
+    def update_current_goal(self):
+        if self.current_goal_index < len(self.goal_points):
+            self.goal_position = self.goal_points[self.current_goal_index]
+            if self.navigation_3d:
+                self.goal_distance = self.get_distance_to_goal_3d()
+            else:
+                self.goal_distance = self.get_distance_to_goal_2d()
+            print(f"Switching to goal {self.current_goal_index}: {self.goal_position}")
+        else:
+            print("All goals reached!")
             
     def get_goal_from_rect(self, rect_set, random_angle_set):
         rect = rect_set
@@ -196,7 +219,10 @@ class MultirotorDynamicsAirsim():
                     normalized state range 0-255
         '''
         
-        distance = self.get_distance_to_goal_2d()
+        if self.navigation_3d:
+            distance = self.get_distance_to_goal_3d()
+        else:
+            distance = self.get_distance_to_goal_2d()
         relative_yaw = self._get_relative_yaw()  # return relative yaw -pi to pi 
         relative_pose_z = self.get_position()[2] - self.goal_position[2]  # current position z is positive
         vertical_distance_norm = (relative_pose_z / self.max_vertical_difference / 2 + 0.5) * 255
@@ -278,6 +304,15 @@ class MultirotorDynamicsAirsim():
         return [0.0, 0.0, self.yaw_sp]
 
     def get_distance_to_goal_2d(self):
-        return math.sqrt(pow(self.get_position()[0] - self.goal_position[0], 2) + pow(self.get_position()[1] - self.goal_position[1], 2))
+        return math.dist(self.get_position()[:2], self.goal_position[:2])
 
+    def get_distance_to_goal_3d(self):
+        return math.dist(self.get_position(), self.goal_position)
     
+    def check_and_switch_goal(self, accept_radius):
+        # 使用 3D 距离来判定到达，防止在不同高度误判
+        distance = self.get_distance_to_goal_3d()
+        if distance < accept_radius:
+            self.current_goal_index += 1
+            if self.current_goal_index < len(self.goal_points):
+                self.update_current_goal()
