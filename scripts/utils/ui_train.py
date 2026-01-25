@@ -432,6 +432,22 @@ class TrainingUi(QWidget):
             # 保持之前的 Y 轴反转逻辑 (如果 AirSim 坐标系需要)
             self.traj_pw_xy.invertY() 
 
+            # Add background for NH_center in 3D mode
+            if self.cfg.get('options', 'env_name') == 'NH_center':
+                background_image_path = 'resources/env_maps/NH_center.png'
+                img_data = Image.open(background_image_path)
+                image = np.copy(img_data)
+                self.background_img = pg.ImageItem(image)
+                self.traj_pw_xy.addItem(self.background_img)
+                # make sure image is behind other data
+                self.background_img.setZValue(-100)
+                self.background_img.setRect(pg.QtCore.QRectF(-135, -135, 270, 270))
+                self.traj_pw_xy.setXRange(max=135, min=-135)
+                self.traj_pw_xy.setYRange(max=135, min=-135)
+            else:
+                self.traj_pw_xy.setXRange(max=100, min=-50)
+                self.traj_pw_xy.setYRange(max=50, min=-100)
+
             # --- 绘图元素 ---
             # 1. 轨迹线 (深海蓝，稍微加粗)
             self.plot_xy_trace = self.traj_pw_xy.plot(pen=pg.mkPen(color='#0050C6', width=2.5))
@@ -454,9 +470,6 @@ class TrainingUi(QWidget):
             self.plot_z_target_line = self.traj_pw_z.plot(pen=pg.mkPen(color='#999', width=1, style=pg.QtCore.Qt.DashLine))
             # 2. 实际高度曲线 (橙色/珊瑚色，对比蓝色)
             self.plot_z_trace = self.traj_pw_z.plot(pen=pg.mkPen(color='#fd7e14', width=2), fillLevel=0, brush=(253, 126, 20, 30))
-
-            self.traj_pw_xy.setXRange(max=100, min=-50)
-            self.traj_pw_xy.setYRange(max=50, min=-100)
 
             layout.addWidget(self.traj_pw_xy, stretch=2)
             layout.addWidget(self.traj_pw_z, stretch=1)
